@@ -4,11 +4,15 @@ import android.app.Activity;
 import android.app.DownloadManager;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.Build;
-import android.Manifest;
-import android.content.pm.PackageManager;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.graphics.Color;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.Button;
+import android.widget.Toast;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebChromeClient;
@@ -17,26 +21,58 @@ import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.URLUtil;
 import android.webkit.CookieManager;
-import android.widget.Toast;
 
 public class MainActivity extends Activity {
 
     private WebView webView;
     private ValueCallback<Uri[]> uploadCallback;
     private static final int FILE_REQUEST = 100;
-    private static final int STORAGE_REQUEST = 101;
-
-    private String pendingUrl;
-    private String pendingUserAgent;
-    private String pendingMime;
-    private String pendingFilename;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setBackgroundColor(Color.WHITE);
+
+        LinearLayout toolbar = new LinearLayout(this);
+        toolbar.setOrientation(LinearLayout.HORIZONTAL);
+        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        toolbar.setPadding(10, 8, 10, 8);
+        toolbar.setBackgroundColor(Color.rgb(20, 110, 65));
+
+        Button downloadButton = new Button(this);
+        downloadButton.setText("⬇ Download");
+        downloadButton.setTextColor(Color.WHITE);
+        downloadButton.setBackgroundTintList(
+            android.content.res.ColorStateList.valueOf(
+                Color.rgb(20, 110, 65)
+            )
+        );
+
+        downloadButton.setOnClickListener(v -> {
+            Toast.makeText(this,
+                "ওয়েবসাইটের PDF বা ছবি Download বাটনে চাপ দিন",
+                Toast.LENGTH_LONG).show();
+        });
+
+        toolbar.addView(downloadButton);
+
         webView = new WebView(this);
-        setContentView(webView);
+        layout.addView(toolbar,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ));
+
+        layout.addView(webView,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0, 1
+            ));
+
+        setContentView(layout);
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -50,15 +86,55 @@ public class MainActivity extends Activity {
         webView.setDownloadListener((url, userAgent,
                 contentDisposition, mimeType, contentLength) -> {
 
-            String filename = URLUtil.guessFileName(
-                url, contentDisposition, mimeType
-            );
+            try {
+                DownloadManager.Request request =
+                    new DownloadManager.Request(Uri.parse(url));
 
-            filename = filename.replaceAll(
-                "[\\\\/:*?\"<>|]", "_"
-            );
+                String cookie =
+                    CookieManager.getInstance().getCookie(url);
 
-            startDownload(url, userAgent, mimeType, filename);
+                if (cookie != null) {
+                    request.addRequestHeader("Cookie", cookie);
+                }
+
+                if (userAgent != null) {
+                    request.addRequestHeader("User-Agent", userAgent);
+                }
+
+                String filename = URLUtil.guessFileName(
+                    url, contentDisposition, mimeType
+                );
+
+                filename = filename.replaceAll(
+                    "[\\\\/:*?\"<>|]", "_"
+                );
+
+                request.setTitle(filename);
+                request.setDescription("TALHA SALARY Download");
+                request.setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                );
+
+                request.setDestinationInExternalPublicDir(
+                    Environment.DIRECTORY_DOWNLOADS, filename
+                );
+
+                DownloadManager manager =
+                    (DownloadManager) getSystemService(
+                        Context.DOWNLOAD_SERVICE
+                    );
+
+                manager.enqueue(request);
+
+                Toast.makeText(this,
+                    "Download শুরু হয়েছে",
+                    Toast.LENGTH_SHORT).show();
+
+            } catch (Exception e) {
+                Toast.makeText(this,
+                    "Download failed: " + e.getMessage(),
+                    Toast.LENGTH_LONG).show();
+            }
         });
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -75,10 +151,10 @@ public class MainActivity extends Activity {
 
                 uploadCallback = callback;
 
-                Intent intent = params.createIntent();
-
                 try {
-                    startActivityForResult(intent, FILE_REQUEST);
+                    startActivityForResult(
+                        params.createIntent(), FILE_REQUEST
+                    );
                 } catch (Exception e) {
                     uploadCallback = null;
                     Toast.makeText(MainActivity.this,
@@ -99,95 +175,6 @@ public class MainActivity extends Activity {
         });
 
         webView.loadUrl("https://talha-salary.edgeone.dev/");
-    }
-
-    private void startDownload(String url, String userAgent,
-                               String mimeType, String filename) {
-
-        pendingUrl = url;
-        pendingUserAgent = userAgent;
-        pendingMime = mimeType;
-        pendingFilename = filename;
-
-        if (Build.VERSION.SDK_INT <= 28 &&
-            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED) {
-
-            requestPermissions(
-                new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                STORAGE_REQUEST
-            );
-            return;
-        }
-
-        enqueueDownload();
-    }
-
-    private void enqueueDownload() {
-        try {
-            DownloadManager.Request request =
-                new DownloadManager.Request(Uri.parse(pendingUrl));
-
-            String cookie = CookieManager.getInstance()
-                .getCookie(pendingUrl);
-
-            if (cookie != null) {
-                request.addRequestHeader("Cookie", cookie);
-            }
-
-            if (pendingUserAgent != null) {
-                request.addRequestHeader("User-Agent", pendingUserAgent);
-            }
-
-            if (pendingMime != null) {
-                request.setMimeType(pendingMime);
-            }
-
-            request.setTitle(pendingFilename);
-            request.setDescription("TALHA SALARY Download");
-            request.setNotificationVisibility(
-                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-            );
-
-            request.setDestinationInExternalPublicDir(
-                Environment.DIRECTORY_DOWNLOADS,
-                pendingFilename
-            );
-
-            DownloadManager manager =
-                (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-
-            manager.enqueue(request);
-
-            Toast.makeText(this,
-                "Download শুরু হয়েছে",
-                Toast.LENGTH_SHORT).show();
-
-        } catch (Exception e) {
-            Toast.makeText(this,
-                "Download failed: " + e.getMessage(),
-                Toast.LENGTH_LONG).show();
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(
-        int requestCode, String[] permissions, int[] grantResults) {
-
-        super.onRequestPermissionsResult(
-            requestCode, permissions, grantResults
-        );
-
-        if (requestCode == STORAGE_REQUEST) {
-            if (grantResults.length > 0 &&
-                grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                enqueueDownload();
-            } else {
-                Toast.makeText(this,
-                    "Storage permission denied",
-                    Toast.LENGTH_SHORT).show();
-            }
-        }
     }
 
     @Override
